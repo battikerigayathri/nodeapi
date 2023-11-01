@@ -91,12 +91,7 @@ exports.verify = async (req, res) => {
     //updating user verification
     user.isVerified = true;
     await user.save();
-  //   return res.status(200).send({
-  //     message: "Account Verified",
-  //   });
-  // } catch (error) {
-  //   return res.status(500).send(error);
-  // }
+  
 }
 
 // User login
@@ -134,7 +129,7 @@ exports.login = async (req, res) => {
 
 //  
 function generateVerificationCode() {
-  // Generate a random token (you can use libraries like `crypto` for stronger tokens)
+  // Generate a random token 
   return (
     Math.random().toString(4).substring(2, 15) +
     Math.random().toString(4).substring(2, 15)
@@ -198,9 +193,6 @@ exports.resetPassword=async(req,res)=>{
   }
   // Find the user by email
   const user = await User.findOne({ email });
-if (!user) {
-  return res.status(404).json({ message: 'User not found' });
-  }
   // Hash the new password and update the user's password
   user.password = newPassword;
   await user.save()
@@ -244,9 +236,6 @@ const user = await User.findOne({ email });
   }
   return true; // Token is valid
 }
-// function hashPassword(password) {
-//   return bcrypt.hash(password, 10);
-// }
 exports.update = async (req, res) => {
   try {
     const getUserById = await User.findByIdAndUpdate(req.param.id);

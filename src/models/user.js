@@ -50,7 +50,6 @@ const UserSchema = new mongoose.Schema(
       default: Date.now,
     },
   }
-  // { timestamps: true }
 );
 
 UserSchema.pre("save", function (next) {
