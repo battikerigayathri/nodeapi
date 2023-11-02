@@ -151,6 +151,22 @@ exports.login = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
+exports.update = async (req, res) => {
+  try {
+    const getUserById = await User.findByIdAndUpdate(req.param.id);
+    res.send({
+      message: "user has been updated successfully",
+      status: true,
+      result: getUserById,
+    });
+  } catch (error) {
+    console.log(error);
+    res.status(500).send({
+      message: "user didnt updated",
+    });
+  }
+};
+
 // Helper functions
 function generateVerificationCode() {
   // Generate a random code
@@ -169,7 +185,7 @@ async function sendVerificationEmail(email, code) {
   // Send an email with a link that includes the verification token
   const mailOptions = {
     from: "prashanthberi00@gmail.com",
-    to: "radhee@givmail.com",
+    to: "gayathri@gimpmail.com",
     subject: "Email Verification",
     text: `Click the following link to verify your email: http://localhost:8005/verify/${code}`,
   };
@@ -206,14 +222,14 @@ exports.forgetPassword = async (req, res) => {
   // Generate a password reset token and send it via email
   const resetToken = generateResetToken();
   sendResetEmail(email, resetToken);
-  res.status(200).json({ message: "Password reset request sent successfully" });
+  res.status(200).json({ message: "to resetpassword token has sent to email" });
 };
 //reset the password using the reset token
 exports.resetPassword = async (req, res) => {
   const { email, resetToken, newPassword } = req.body;
 
   // Verify the reset token (you should check against the stored token and its expiration time)
-  const validToken = verifyResetToken(email, resetToken);
+    const validToken = verifyResetToken(email, resetToken);
 
   if (!validToken) {
     return res.status(400).json({ message: "Invalid or expired reset token" });
@@ -237,7 +253,7 @@ async function sendResetEmail(email, resetToken) {
   // Send an email with a link that includes the verification token
   const mailOptions = {
     from: "prashanthberi00@gmail.com",
-    to: "radhee@givmail.com",
+    to: "gayathri@gimpmail.com",
     subject: "reset password",
     text: `Click the following link to verify your email: http://localhost:8005/reset/${resetToken}`,
   };
@@ -265,18 +281,3 @@ async function verifyResetToken(email, resetToken) {
   }
 }
 
-exports.update = async (req, res) => {
-  try {
-    const getUserById = await User.findByIdAndUpdate(req.param.id);
-    res.send({
-      message: "user has been updated successfully",
-      status: true,
-      result: getUserById,
-    });
-  } catch (error) {
-    console.log(error);
-    res.status(500).send({
-      message: "user didnt updated",
-    });
-  }
-};
