@@ -1,74 +1,73 @@
 const express = require("express");
 const mongoose = require("mongoose");
-const path = require("path");
+const cors = require("cors"); // Ensure cors is imported
 const dotenv = require("dotenv");
 const crypto = require("crypto");
 dotenv.config();
-const cors = require("cors");
-const app = express();
-const port = 8005;
 
+const app = express();
+const port = process.env.PORT || 8005;
+
+// 1. CRITICAL: Enable CORS for the portal domain
+app.use(cors()); 
 app.use(express.json());
-app.use(cors()); // Add this near your other app.use calls
 
 const sowStore = new Map();
 
 // --- POST /create-sow/ ---
 app.post("/create-sow/", (req, res) => {
-  try {
-    const payload = req.body;
-    if (!payload || !payload.parent_input) {
-      return res
-        .status(400)
-        .json({ success: false, error: "parent_input is required." });
+    try {
+        const payload = req.body;
+        if (!payload || !payload.parent_input) {
+            return res.status(400).json({ success: false, error: "parent_input is required." });
+        }
+
+        // Dynamically detect the domain (e.g., https://your-app.render.com)
+        const protocol = req.headers['x-forwarded-proto'] || req.protocol;
+        const host = req.get('host');
+        const baseUrl = `${protocol}://${host}`;
+
+        const token = crypto.randomBytes(16).toString("hex");
+        sowStore.set(token, payload);
+        setTimeout(() => sowStore.delete(token), 15 * 60 * 1000); // 15 min expiry
+
+        return res.status(200).json({
+            success: true,
+            token,
+            redirect_url: `${baseUrl}/go/${token}`,
+            agentResponseContext: "SOW data stored. Redirecting..."
+        });
+    } catch (err) {
+        return res.status(500).json({ success: false, error: err.message });
     }
-
-    // Get the actual domain (e.g., your-app.onrender.com)
-    const protocol = req.protocol;
-    const host = req.get("host");
-    const baseUrl =   `https://nodeapi-vriz.onrender.com`;
-
-    const token = crypto.randomBytes(16).toString("hex");
-    sowStore.set(token, payload);
-    setTimeout(() => sowStore.delete(token), 10 * 60 * 1000);
-
-    return res.status(200).json({
-      success: true,
-      token,
-      // Dynamically create the URL instead of hardcoding localhost
-      redirect_url: `${baseUrl}/go/${token}`,
-      agentResponseContext: "SOW data stored. Redirecting to form...",
-    });
-  } catch (err) {
-    return res.status(500).json({ success: false, error: err.message });
-  }
 });
 
 // --- GET /sow-data/:token ---
 app.get("/sow-data/:token", (req, res) => {
-  const data = sowStore.get(req.params.token);
-  if (!data)
-    return res.status(404).json({ success: false, error: "Token expired." });
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  return res.status(200).json({ success: true, data });
+    const data = sowStore.get(req.params.token);
+    if (!data) return res.status(404).json({ success: false, error: "Token expired or not found." });
+    
+    // Explicitly allow the CSOD portal to read this JSON
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    return res.status(200).json({ success: true, data });
 });
 
-// --- GET /go/:token (The Bridge) ---
+// --- GET /go/:token ---
 app.get("/go/:token", (req, res) => {
-  const { token } = req.params;
-  const data = sowStore.get(token);
-  if (!data) return res.status(404).send("Link expired");
+    const { token } = req.params;
+    const data = sowStore.get(token);
+    if (!data) return res.status(404).send("Link expired. Please regenerate.");
 
-  const sowJson = JSON.stringify(data).replace(/<\/script>/gi, "<\\/script>");
+    const sowJson = JSON.stringify(data).replace(/<\/script>/gi, "<\\/script>");
 
-  res.send(`
+    res.send(`
     <!DOCTYPE html>
     <html>
-    <head><title>Redirecting to SOW Form...</title></head>
-    <body style="font-family: sans-serif; text-align: center; padding-top: 50px;">
-        <h2>Redirecting to SOW Portal...</h2>
+    <head><title>Redirecting...</title></head>
+    <body style="font-family:sans-serif; text-align:center; padding-top:50px;">
+        <h3>Preparing SOW Data...</h3>
         <script>
-            // window.name persistence for cross-origin data transfer
+            // Persistence across the redirect
             window.name = JSON.stringify({ __sow__: ${sowJson}, __token__: "${token}" });
             window.location.replace("https://vithiit-careers-dev.mercuryx.cloud/dashboard/page/create-csod-sow#sow_token=${token}");
         </script>
@@ -77,13 +76,9 @@ app.get("/go/:token", (req, res) => {
 });
 
 // --- GET /inject.js ---
-// --- GET /inject.js ---
 app.get("/inject.js", (req, res) => {
-    const { token } = req.query;
-    
-    // Dynamically determine the API base based on how this script was requested
-    const protocol = req.protocol;
     const host = req.get('host');
+    const protocol = req.headers['x-forwarded-proto'] || req.protocol;
     const API_BASE = `${protocol}://${host}`;
 
     res.setHeader("Content-Type", "application/javascript");
@@ -91,32 +86,35 @@ app.get("/inject.js", (req, res) => {
 
     res.send(`
 (function(){
-    console.log("[SOW] Prefill Script Initialized");
-    const TOKEN = new URLSearchParams(window.location.hash.replace('#', '?')).get('sow_token');
+    console.log("[SOW] Prefill Script Active");
     
-    if (!TOKEN) {
-        console.error("[SOW] No token found in URL hash.");
+    // Extract token from URL hash
+    const hash = window.location.hash;
+    const token = hash.includes("sow_token=") ? hash.split("sow_token=")[1].split("&")[0] : null;
+
+    if (!token) {
+        console.error("[SOW] No token found in URL");
         return;
     }
 
-    async function fetchData() {
+    async function start() {
         try {
-            console.log("[SOW] Fetching data for token from:", "${API_BASE}");
-            const response = await fetch("${API_BASE}/sow-data/" + TOKEN);
-            const result = await response.json();
+            console.log("[SOW] Fetching data from: ${API_BASE}");
+            const resp = await fetch("${API_BASE}/sow-data/" + token);
+            const res = await resp.json();
             
-            if (result.success && result.data) {
-                console.log("[SOW] Data received:", result.data);
-                runPrefill(result.data);
+            if (res.success) {
+                console.log("[SOW] Data Loaded:", res.data);
+                waitAndFill(res.data);
             } else {
-                console.error("[SOW] Failed to get data:", result.error);
+                console.error("[SOW] API Error:", res.error);
             }
-        } catch (err) {
-            console.error("[SOW] Network error fetching SOW data:", err);
+        } catch (e) {
+            console.error("[SOW] Network Error:", e);
         }
     }
 
-    function setReactValue(el, val) {
+    function setVal(el, val) {
         if (!el || val == null) return;
         el.focus();
         const setter = Object.getOwnPropertyDescriptor(
@@ -129,39 +127,47 @@ app.get("/inject.js", (req, res) => {
         el.blur();
     }
 
-    function runPrefill(data) {
+    function waitAndFill(data) {
+        const check = setInterval(() => {
+            const poInput = document.querySelector('input[placeholder*="PO Number"]');
+            if (poInput) {
+                clearInterval(check);
+                fill(data);
+            }
+        }, 500);
+    }
+
+    function fill(data) {
         const p = data.parent_input || {};
         const li = data.lines_input || [];
 
-        // Parent Mapping
-        const phMap = {
-            "PO Number": p.poNumber || p.po_number,
-            "Client Manager": p.clientManager,
-            "Client Manager Email": p.clientManagerEmail,
-            "Customer Account Number": p.customerAccNumber
-        };
+        setVal(document.querySelector('input[placeholder*="PO Number"]'), p.poNumber);
+        setVal(document.querySelector('input[type="date"]'), p.date || p.order_date);
+        setVal(document.querySelector('input[placeholder*="Client Manager Email"]'), p.clientManagerEmail);
+        setVal(document.querySelector('select'), p.currency || "USD");
 
-        Object.keys(phMap).forEach(ph => {
-            const el = document.querySelector('input[placeholder*="' + ph + '"]');
-            setReactValue(el, phMap[ph]);
+        // Rows
+        const rows = document.querySelectorAll('input[placeholder*="Line Item Number"]');
+        li.forEach((item, i) => {
+            if (rows[i]) {
+                const container = rows[i].closest('div').parentElement;
+                const ins = container.querySelectorAll('input');
+                setVal(ins[0], item.lineItemNumber);
+                setVal(ins[1], item.description);
+                setVal(ins[2], item.price);
+                setVal(ins[3], item.quantity);
+            }
         });
-
-        const dateEl = document.querySelector('input[type="date"]');
-        if (dateEl) setReactValue(dateEl, p.date || p.order_date);
-
-        // Lines Logic... (rest of your line item logic)
-        console.log("[SOW] Prefill attempted.");
+        console.log("[SOW] Prefill Finished");
     }
 
-    // Start the process
-    fetchData();
+    start();
 })();
     `);
 });
 
-mongoose
-  .connect(process.env.DB_URL || "mongodb://localhost:27017/signUp")
-  .then(() => console.log("DB Connected"))
-  .catch((err) => console.log("DB Failed", err));
+mongoose.connect(process.env.DB_URL || "mongodb://localhost:27017/signUp")
+    .then(() => console.log("DB Connected"))
+    .catch(err => console.log("DB Error", err));
 
-app.listen(port, () => console.log(`Server running on ${port}`));
+app.listen(port, () => console.log(`Server running on port \${port}`));
