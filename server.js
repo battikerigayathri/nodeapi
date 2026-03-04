@@ -4,7 +4,8 @@ const path = require("path");
 const dotenv = require("dotenv");
 const crypto = require("crypto");
 dotenv.config();
-
+const cors = require("cors");
+app.use(cors()); // Add this near your other app.use calls
 const app = express();
 const port = 8005;
 
@@ -14,43 +15,53 @@ const sowStore = new Map();
 
 // --- POST /create-sow/ ---
 app.post("/create-sow/", (req, res) => {
-    try {
-        const payload = req.body;
-        if (!payload || !payload.parent_input) {
-            return res.status(400).json({ success: false, error: "parent_input is required." });
-        }
-        const token = crypto.randomBytes(16).toString("hex");
-        sowStore.set(token, payload);
-        setTimeout(() => sowStore.delete(token), 10 * 60 * 1000); // 10 min expiry
-
-        return res.status(200).json({
-            success: true,
-            token,
-            redirect_url: `http://localhost:${port}/go/${token}`,
-            agentResponseContext: "SOW data stored. Redirecting to form..."
-        });
-    } catch (err) {
-        return res.status(500).json({ success: false, error: err.message });
+  try {
+    const payload = req.body;
+    if (!payload || !payload.parent_input) {
+      return res
+        .status(400)
+        .json({ success: false, error: "parent_input is required." });
     }
+
+    // Get the actual domain (e.g., your-app.onrender.com)
+    const protocol = req.protocol;
+    const host = req.get("host");
+    const baseUrl =   `https://nodeapi-vriz.onrender.com`;
+
+    const token = crypto.randomBytes(16).toString("hex");
+    sowStore.set(token, payload);
+    setTimeout(() => sowStore.delete(token), 10 * 60 * 1000);
+
+    return res.status(200).json({
+      success: true,
+      token,
+      // Dynamically create the URL instead of hardcoding localhost
+      redirect_url: `${baseUrl}/go/${token}`,
+      agentResponseContext: "SOW data stored. Redirecting to form...",
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 // --- GET /sow-data/:token ---
 app.get("/sow-data/:token", (req, res) => {
-    const data = sowStore.get(req.params.token);
-    if (!data) return res.status(404).json({ success: false, error: "Token expired." });
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    return res.status(200).json({ success: true, data });
+  const data = sowStore.get(req.params.token);
+  if (!data)
+    return res.status(404).json({ success: false, error: "Token expired." });
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  return res.status(200).json({ success: true, data });
 });
 
 // --- GET /go/:token (The Bridge) ---
 app.get("/go/:token", (req, res) => {
-    const { token } = req.params;
-    const data = sowStore.get(token);
-    if (!data) return res.status(404).send("Link expired");
+  const { token } = req.params;
+  const data = sowStore.get(token);
+  if (!data) return res.status(404).send("Link expired");
 
-    const sowJson = JSON.stringify(data).replace(/<\/script>/gi, "<\\/script>");
+  const sowJson = JSON.stringify(data).replace(/<\/script>/gi, "<\\/script>");
 
-    res.send(`
+  res.send(`
     <!DOCTYPE html>
     <html>
     <head><title>Redirecting to SOW Form...</title></head>
@@ -67,16 +78,16 @@ app.get("/go/:token", (req, res) => {
 
 // --- GET /inject.js ---
 app.get("/inject.js", (req, res) => {
-    const { token } = req.query;
-    const data = sowStore.get(token);
-    if (!data) return res.status(404).send("// Token expired");
+  const { token } = req.query;
+  const data = sowStore.get(token);
+  if (!data) return res.status(404).send("// Token expired");
 
-    const sowJson = JSON.stringify(data).replace(/<\/script>/gi, "<\\/script>");
+  const sowJson = JSON.stringify(data).replace(/<\/script>/gi, "<\\/script>");
 
-    res.setHeader("Content-Type", "application/javascript");
-    res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Content-Type", "application/javascript");
+  res.setHeader("Access-Control-Allow-Origin", "*");
 
-    res.send(`
+  res.send(`
 (function(){
     console.log("[SOW] Injection script running...");
     var data = ${sowJson};
@@ -156,8 +167,9 @@ app.get("/inject.js", (req, res) => {
     `);
 });
 
-mongoose.connect(process.env.DB_URL || "mongodb://localhost:27017/signUp")
-    .then(() => console.log("DB Connected"))
-    .catch(err => console.log("DB Failed", err));
+mongoose
+  .connect(process.env.DB_URL || "mongodb://localhost:27017/signUp")
+  .then(() => console.log("DB Connected"))
+  .catch((err) => console.log("DB Failed", err));
 
 app.listen(port, () => console.log(`Server running on ${port}`));
