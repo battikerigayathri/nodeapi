@@ -106,6 +106,7 @@ app.get("/sow-data/:token", async (req, res) => {
 
 // --------------------
 // GET /go/:token
+// Redirect with Query Params Instead of window.name
 // --------------------
 app.get("/go/:token", async (req, res) => {
   try {
@@ -117,32 +118,33 @@ app.get("/go/:token", async (req, res) => {
       return res.status(404).send("Link expired. Please regenerate.");
     }
 
-    const sowJson = JSON.stringify(record.payload)
-      .replace(/<\/script>/gi, "<\\/script>");
+    const payload = record.payload;
 
-    res.send(`
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Redirecting...</title>
-    </head>
-    <body style="font-family:sans-serif;text-align:center;padding-top:50px;">
-        <h3>Preparing SOW Data...</h3>
-        <script>
-            window.name = JSON.stringify({
-                __sow__: ${sowJson},
-                __token__: "${token}"
-            });
+    // Convert payload JSON to URL query params
+    const queryParams = new URLSearchParams({
+      poNumber: payload.poNumber || "",
+      orderDate: payload.orderDate || "",
+      invoiceAmount: payload.invoiceAmount || "",
+      currency: payload.currency || "",
+      clientManager: payload.clientManager || "",
+      clientManagerEmail: payload.clientManagerEmail || "",
+      customerAccountNumber: payload.customerAccountNumber || "",
+      lineItemNumber: payload.lineItemNumber || "",
+      lineItemDescription: payload.lineItemDescription || "",
+      price: payload.price || "",
+      quantity: payload.quantity || "",
+      amount: payload.amount || "",
+      billing: payload.billing || "",
+      sow_token: token
+    }).toString();
 
-            window.location.replace(
-              "https://vithiit-careers-dev.mercuryx.cloud/dashboard/page/create-csod-sow#sow_token=${token}"
-            );
-        </script>
-    </body>
-    </html>
-    `);
+    const redirectUrl =
+      `https://vithiit-careers-dev.mercuryx.cloud/dashboard/page/create-csod-sow?${queryParams}`;
+
+    return res.redirect(redirectUrl);
 
   } catch (err) {
+    console.error(err);
     res.status(500).send("Internal Server Error");
   }
 });
