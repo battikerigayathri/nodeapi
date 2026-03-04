@@ -21,11 +21,14 @@
     "ioredis": "^5.3.2",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^7.6.3",
+    "node-fetch": "^2.7.0",
     "nodemailer": "^6.9.7",
     "nodemon": "^3.0.1",
     "passport": "^0.6.0",
     "passport-jwt": "^4.0.1",
+    "pdf-parse": "^2.3.0",
     "redis": "^4.6.10",
+    "task_sdk": "github:battikerigayathri/task_sdk",
     "validator": "^13.11.0"
   },
   "description": ""
