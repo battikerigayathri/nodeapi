@@ -1,102 +1,147 @@
 // ==UserScript==
-// @name         CSOD SOW Prefill
+// @name         CSOD SOW Prefill (Window.Name Based)
 // @match        https://vithiit-careers-dev.mercuryx.cloud/dashboard/page/create-csod-sow*
-// @grant        GM_xmlhttpRequest
-// @connect      your-deployed-app.onrender.com 
+// @grant        none
 // @run-at       document-idle
 // ==/UserScript==
+
 (function () {
-    "use strict";
-    const NODE_SERVER = "https://nodeapi-vriz.onrender.com";
+  "use strict";
 
-    function setReactValue(el, val) {
-        if (!el) return;
-        el.focus();
-        const proto = el.tagName === "SELECT" ? window.HTMLSelectElement.prototype : window.HTMLInputElement.prototype;
-        const setter = Object.getOwnPropertyDescriptor(proto, "value").set;
-        setter.call(el, val);
-        el.dispatchEvent(new Event("input", { bubbles: true }));
-        el.dispatchEvent(new Event("change", { bubbles: true }));
-        el.blur();
+  console.log("[SOW] Prefill Script Loaded");
+
+  function setReactValue(el, value) {
+    if (!el || value == null) return;
+
+    el.focus();
+
+    const prototype =
+      el.tagName === "SELECT"
+        ? window.HTMLSelectElement.prototype
+        : window.HTMLInputElement.prototype;
+
+    const setter = Object.getOwnPropertyDescriptor(
+      prototype,
+      "value"
+    ).set;
+
+    setter.call(el, value);
+
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+
+    el.blur();
+  }
+
+  function fillForm(data) {
+    console.log("[SOW] Filling form with:", data);
+
+    const p = data.parent_input || {};
+    const li = data.lines_input || [];
+
+    // -------------------------
+    // Parent Fields
+    // -------------------------
+
+    setReactValue(
+      document.querySelector('input[placeholder*="PO Number"]'),
+      p.poNumber
+    );
+
+    setReactValue(
+      document.querySelector('input[type="date"]'),
+      p.date
+    );
+
+    setReactValue(
+      document.querySelector('input[placeholder*="Client Manager"]'),
+      p.clientManager
+    );
+
+    setReactValue(
+      document.querySelector('input[placeholder*="Client Manager Email"]'),
+      p.clientManagerEmail
+    );
+
+    setReactValue(
+      document.querySelector('input[placeholder*="Customer Account Number"]'),
+      p.customerAccNumber
+    );
+
+    setReactValue(
+      document.querySelector("select"),
+      p.currency || "USD"
+    );
+
+    // -------------------------
+    // Handle Line Items
+    // -------------------------
+
+    const existingRows = document.querySelectorAll(
+      'input[placeholder*="Line Item Number"]'
+    ).length;
+
+    const addBtn =
+      document.querySelector('svg[data-testid="AddIcon"]')?.parentElement;
+
+    if (li.length > existingRows && addBtn) {
+      for (let i = 0; i < li.length - existingRows; i++) {
+        addBtn.click();
+      }
     }
 
-    function doPrefill(data) {
-        console.log("[SOW] Starting prefill with data:", data);
-        const p = data.parent_input || {};
-        const li = data.lines_input || data.line_items || [];
+    setTimeout(() => {
+      const rows = document.querySelectorAll(
+        'input[placeholder*="Line Item Number"]'
+      );
 
-        // 1. Fill Parent Fields
-        const phFields = {
-            "PO Number": p.poNumber || p.po_number,
-            "Client Manager": p.clientManager,
-            "Client Manager Email": p.clientManagerEmail,
-            "Customer Account Number": p.customerAccNumber
-        };
+      li.forEach((item, index) => {
+        if (!rows[index]) return;
 
-        Object.keys(phFields).forEach(ph => {
-            setReactValue(document.querySelector(`input[placeholder*="${ph}"]`), phFields[ph]);
-        });
+        const container = rows[index].closest("tr") || rows[index].parentElement.parentElement;
 
-        setReactValue(document.querySelector('input[type="date"]'), p.date || p.order_date);
-        setReactValue(document.querySelectorAll("select")[0], p.currency || "USD");
+        const inputs = container.querySelectorAll("input");
 
-        // 2. Handle Dynamic Rows
-        const existing = document.querySelectorAll('input[placeholder*="Line Item Number"]').length;
-        if (li.length > existing) {
-            const addBtn = document.querySelector('svg:last-of-type')?.parentElement;
-            for (let i = 0; i < (li.length - existing); i++) { addBtn?.click(); }
-            setTimeout(() => fillRows(li), 800);
-        } else {
-            fillRows(li);
-        }
+        setReactValue(inputs[0], item.lineItemNumber);
+        setReactValue(inputs[1], item.description);
+        setReactValue(inputs[2], item.price);
+        setReactValue(inputs[3], item.quantity);
+      });
+
+      console.log("[SOW] Prefill Completed");
+    }, 800);
+  }
+
+  function waitForForm(data) {
+    const interval = setInterval(() => {
+      const poField = document.querySelector(
+        'input[placeholder*="PO Number"]'
+      );
+
+      if (poField) {
+        clearInterval(interval);
+        fillForm(data);
+      }
+    }, 500);
+  }
+
+  function init() {
+    if (!window.name) {
+      console.warn("[SOW] No window.name data found");
+      return;
     }
 
-    function fillRows(li) {
-        const rows = document.querySelectorAll('input[placeholder*="Line Item Number"]');
-        const descs = document.querySelectorAll('input[placeholder*="Line Item Description"]');
-        const prices = document.querySelectorAll('input[placeholder*="Price"]');
-        const qtys = document.querySelectorAll('input[placeholder*="Quantity"]');
-        const bills = document.querySelectorAll('select[id^="billing-"]');
+    try {
+      const parsed = JSON.parse(window.name);
 
-        li.forEach((item, i) => {
-            if (rows[i]) {
-                setReactValue(rows[i], item.lineItemNumber);
-                setReactValue(descs[i], item.description);
-                setReactValue(prices[i], item.price);
-                setReactValue(qtys[i], item.quantity);
-                setReactValue(bills[i], item.billing || "PER_HOUR");
-            }
-        });
-        console.log("[SOW] Prefill Finished");
+      if (parsed.__sow__) {
+        console.log("[SOW] Data detected from window.name");
+        waitForForm(parsed.__sow__);
+      }
+    } catch (e) {
+      console.error("[SOW] Failed to parse window.name", e);
     }
+  }
 
-    function init() {
-        const hashToken = window.location.hash.includes("sow_token=") 
-            ? window.location.hash.split("sow_token=")[1].split("&")[0] 
-            : null;
-
-        if (hashToken) {
-            console.log("[SOW] Token detected in hash:", hashToken);
-            GM_xmlhttpRequest({
-                method: "GET",
-                url: `${NODE_SERVER}/sow-data/${hashToken}`,
-                onload: (r) => {
-                    try {
-                        const res = JSON.parse(r.responseText);
-                        if (res.success) {
-                            // Wait for the specific field to exist before filling
-                            const checkForm = setInterval(() => {
-                                if (document.querySelector('input[placeholder*="PO Number"]')) {
-                                    clearInterval(checkForm);
-                                    doPrefill(res.data);
-                                }
-                            }, 500);
-                        }
-                    } catch (e) { console.error("[SOW] Parse error", e); }
-                }
-            });
-        }
-    }
-
-    init();
+  init();
 })();
