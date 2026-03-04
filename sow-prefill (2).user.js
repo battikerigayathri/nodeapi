@@ -1,14 +1,10 @@
 // ==UserScript==
 // @name         CSOD SOW Prefill
-// @namespace    http://tampermonkey.net/
-// @version      9.0
-// @description  Prefills SOW form using token from Hash
 // @match        https://vithiit-careers-dev.mercuryx.cloud/dashboard/page/create-csod-sow*
 // @grant        GM_xmlhttpRequest
-// @connect      localhost
+// @connect      your-deployed-app.onrender.com 
 // @run-at       document-idle
 // ==/UserScript==
-
 (function () {
     "use strict";
     const NODE_SERVER = "https://nodeapi-vriz.onrender.com";

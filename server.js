@@ -77,25 +77,34 @@ app.get("/go/:token", (req, res) => {
 });
 
 // --- GET /inject.js ---
+// --- GET /inject.js ---
 app.get("/inject.js", (req, res) => {
-  const { token } = req.query;
-  const data = sowStore.get(token);
-  if (!data) return res.status(404).send("// Token expired");
+    const { token } = req.query;
+    const data = sowStore.get(token);
+    if (!data) return res.status(404).send("// Token expired");
 
-  const sowJson = JSON.stringify(data).replace(/<\/script>/gi, "<\\/script>");
+    // Get the current domain dynamically
+    const host = req.get('host');
+    const protocol = req.protocol;
+    const currentDomain = `${protocol}://${host}`;
 
-  res.setHeader("Content-Type", "application/javascript");
-  res.setHeader("Access-Control-Allow-Origin", "*");
+    const sowJson = JSON.stringify(data).replace(/<\/script>/gi, "<\\/script>");
 
-  res.send(`
+    res.setHeader("Content-Type", "application/javascript");
+    res.setHeader("Access-Control-Allow-Origin", "*");
+
+    res.send(`
 (function(){
-    console.log("[SOW] Injection script running...");
+    console.log("[SOW] Prefill Script Active");
     var data = ${sowJson};
     var p = data.parent_input || {};
-    var li = data.lines_input || data.line_items || [];
+    var li = data.lines_input || [];
+
+    // Use the dynamic domain for any secondary fetches
+    var API_BASE = "${currentDomain}"; 
 
     function setReactValue(el, val) {
-        if (!el) return;
+        if (!el || val === undefined || val === null) return;
         el.focus();
         var setter = Object.getOwnPropertyDescriptor(
             el.tagName === "SELECT" ? HTMLSelectElement.prototype : HTMLInputElement.prototype,
@@ -108,11 +117,13 @@ app.get("/inject.js", (req, res) => {
     }
 
     function runPrefill() {
-        // Parent fields by placeholder
+        console.log("[SOW] Starting Prefill on: ", window.location.href);
+        
+        // Parent Fields
         var phMap = {
             "PO Number": p.poNumber || p.po_number,
-            "Client Manager": p.clientManager,
             "Client Manager Email": p.clientManagerEmail,
+            "Client Manager": p.clientManager,
             "Customer Account Number": p.customerAccNumber
         };
 
@@ -124,45 +135,34 @@ app.get("/inject.js", (req, res) => {
         var dateEl = document.querySelector('input[type="date"]');
         if (dateEl) setReactValue(dateEl, p.date || p.order_date);
 
-        var currencyEl = document.querySelector('select');
-        if (currencyEl) setReactValue(currencyEl, p.currency || "USD");
+        var selects = document.querySelectorAll('select');
+        if (selects[0]) setReactValue(selects[0], p.currency || "USD");
 
-        // Handle Table Rows
-        var existing = document.querySelectorAll('input[placeholder*="Line Item Number"]').length;
-        var needed = li.length - existing;
-        
-        if (needed > 0) {
-            var addBtn = document.querySelector('svg[data-testid="AddIcon"]') || document.querySelector('.ms-Icon--Add')?.parentElement || document.querySelector('svg:last-of-type');
-            for(var i=0; i<needed; i++) { addBtn?.parentElement?.click() || addBtn?.click(); }
-            setTimeout(fillLines, 600);
-        } else {
-            fillLines();
-        }
+        // Trigger line items fill
+        fillLines();
     }
 
     function fillLines() {
         var rows = document.querySelectorAll('input[placeholder*="Line Item Number"]');
-        var descs = document.querySelectorAll('input[placeholder*="Line Item Description"]');
-        var prices = document.querySelectorAll('input[placeholder*="Price"]');
-        var qtys = document.querySelectorAll('input[placeholder*="Quantity"]');
-        var bills = document.querySelectorAll('select[id^="billing-"]');
-
         li.forEach(function(item, i) {
-            if (rows[i]) setReactValue(rows[i], item.lineItemNumber);
-            if (descs[i]) setReactValue(descs[i], item.description);
-            if (prices[i]) setReactValue(prices[i], item.price);
-            if (qtys[i]) setReactValue(qtys[i], item.quantity);
-            if (bills[i]) setReactValue(bills[i], item.billing || "PER_HOUR");
+            if (rows[i]) {
+                var parentRow = rows[i].closest('div').parentElement;
+                var rowInputs = parentRow.querySelectorAll('input');
+                setReactValue(rowInputs[0], item.lineItemNumber);
+                setReactValue(rowInputs[1], item.description);
+                setReactValue(rowInputs[2], item.price);
+                setReactValue(rowInputs[3], item.quantity);
+            }
         });
-        console.log("[SOW] Prefill Complete");
     }
 
+    // Increased interval and timeout for deployed environments
     var check = setInterval(function() {
         if (document.querySelector('input[placeholder*="PO Number"]')) {
             clearInterval(check);
-            setTimeout(runPrefill, 800);
+            setTimeout(runPrefill, 1000); // 1s delay for React hydration
         }
-    }, 500);
+    }, 1000);
 })();
     `);
 });
