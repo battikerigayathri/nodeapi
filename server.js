@@ -5,127 +5,85 @@ const dotenv = require("dotenv");
 const crypto = require("crypto");
 
 dotenv.config();
-
 const app = express();
 const port = process.env.PORT || 8005;
 
-// --------------------
-// Middleware
-// --------------------
 app.use(cors());
 app.use(express.json());
 
-// --------------------
-// MongoDB Connection
-// --------------------
 mongoose.connect(process.env.DB_URL || "mongodb://localhost:27017/signUp")
   .then(() => console.log("✅ DB Connected"))
   .catch(err => console.log("❌ DB Error", err));
 
-// --------------------
-// SOW Token Schema (TTL 15 Minutes)
-// --------------------
 const SOWSchema = new mongoose.Schema({
   token: { type: String, required: true, unique: true },
   payload: { type: Object, required: true },
-  createdAt: {
-    type: Date,
-    default: Date.now,
-    expires: 900 // Auto delete after 15 minutes
-  }
+  createdAt: { type: Date, default: Date.now, expires: 900 }
 });
-
 const SOW = mongoose.model("SOW", SOWSchema);
 
-// --------------------
-// POST /create-sow/
-// --------------------
 app.post("/create-sow/", async (req, res) => {
   try {
     const payload = req.body;
-
-    if (!payload || !payload.parent_input) {
-      return res.status(400).json({
-        success: false,
-        error: "parent_input is required."
-      });
-    }
+    if (!payload) return res.status(400).json({ success: false, error: "Payload required." });
 
     const protocol = req.headers["x-forwarded-proto"] || req.protocol;
     const host = req.get("host");
     const baseUrl = `${protocol}://${host}`;
-
     const token = crypto.randomBytes(16).toString("hex");
 
-    await SOW.create({
-      token,
-      payload
-    });
+    await SOW.create({ token, payload });
 
     return res.status(200).json({
       success: true,
       token,
       redirect_url: `${baseUrl}/go/${token}`,
-      agentResponseContext: "SOW data stored. Redirecting to form..."
+      agentResponseContext: "SOW data stored. Redirecting..."
     });
-
   } catch (err) {
-    return res.status(500).json({
-      success: false,
-      error: err.message
-    });
+    return res.status(500).json({ success: false, error: err.message });
   }
 });
 
-// --------------------
-// GET /go/:token
-// --------------------
 app.get("/go/:token", async (req, res) => {
   try {
     const { token } = req.params;
     const record = await SOW.findOne({ token });
 
-    if (!record) {
-      return res.status(404).send("Link expired or invalid. Please regenerate.");
-    }
+    if (!record) return res.status(404).send("Link expired.");
 
-    const payload = record.payload;
+    // --- MAPPING LOGIC FOR NESTED PAYLOAD ---
+    const { parent_input, lines_input } = record.payload;
+    const firstLine = lines_input && lines_input.length > 0 ? lines_input[0] : {};
 
-    // --- CHANGE: Format Date for React Input ---
-    // React's <input type="date" /> requires YYYY-MM-DD
+    // Standardize Date for React (YYYY-MM-DD)
     let formattedDate = "";
-    if (payload.orderDate) {
-      try {
-        const d = new Date(payload.orderDate);
-        if (!isNaN(d.getTime())) {
-          formattedDate = d.toISOString().split('T')[0];
-        }
-      } catch (e) {
-        console.error("Date formatting error:", e);
+    if (parent_input?.date) {
+      const d = new Date(parent_input.date);
+      if (!isNaN(d.getTime())) {
+        formattedDate = d.toISOString().split('T')[0];
       }
     }
 
-    // Convert payload to URL query params
     const queryParams = new URLSearchParams({
-      poNumber: payload.poNumber || "",
-      orderDate: formattedDate, // Use sanitized date
-      invoiceAmount: payload.invoiceAmount || "",
-      currency: payload.currency || "USD",
-      clientManager: payload.clientManager || "",
-      clientManagerEmail: payload.clientManagerEmail || "",
-      customerAccountNumber: payload.customerAccountNumber || "",
-      // Line item fields (first row)
-      lineItemNumber: payload.lineItemNumber || "",
-      lineItemDescription: payload.lineItemDescription || "",
-      price: payload.price || "55",
-      quantity: payload.quantity || "0",
-      amount: payload.amount || "0",
-      billing: payload.billing || "PER_HOUR",
+      poNumber: parent_input?.poNumber || "",
+      orderDate: formattedDate,
+      invoiceAmount: parent_input?.invoiceAmount || "",
+      currency: parent_input?.currency || "USD",
+      clientManager: parent_input?.clientManager || "",
+      clientManagerEmail: parent_input?.clientManagerEmail || "",
+      customerAccountNumber: parent_input?.customerAccNumber || "",
+      // Line Item mapping
+      lineItemNumber: firstLine.lineItemNumber || "",
+      lineItemDescription: firstLine.description || "",
+      price: firstLine.price || "55",
+      quantity: firstLine.quantity || "0",
+      amount: firstLine.amount || "0",
+      billing: firstLine.billing || "PER_HOUR",
       sow_token: token
     }).toString();
 
     const redirectUrl = `https://vithiit-careers-dev.mercuryx.cloud/dashboard/page/create-csod-sow?${queryParams}`;
-
     return res.redirect(redirectUrl);
 
   } catch (err) {
@@ -134,10 +92,4 @@ app.get("/go/:token", async (req, res) => {
   }
 });
 
-app.get("/", (req, res) => {
-  res.send("🚀 SOW Bridge Server Running");
-});
-
-app.listen(port, () => {
-  console.log(`🚀 Server running on port ${port}`);
-});
+app.listen(port, () => console.log(`🚀 Server running on port ${port}`));
