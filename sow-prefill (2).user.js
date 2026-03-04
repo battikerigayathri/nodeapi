@@ -11,7 +11,7 @@
 
 (function () {
     "use strict";
-    const NODE_SERVER = "http://localhost:8005";
+    const NODE_SERVER = "https://nodeapi-vriz.onrender.com";
 
     function setReactValue(el, val) {
         if (!el) return;
