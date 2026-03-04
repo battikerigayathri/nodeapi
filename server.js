@@ -66,34 +66,7 @@ app.post("/create-sow/", async (req, res) => {
       success: true,
       token,
       redirect_url: `${baseUrl}/go/${token}`,
-      agentResponseContext: "SOW data stored. Redirecting..."
-    });
-
-  } catch (err) {
-    return res.status(500).json({
-      success: false,
-      error: err.message
-    });
-  }
-});
-
-// --------------------
-// GET /sow-data/:token
-// --------------------
-app.get("/sow-data/:token", async (req, res) => {
-  try {
-    const record = await SOW.findOne({ token: req.params.token });
-
-    if (!record) {
-      return res.status(404).json({
-        success: false,
-        error: "Token expired or not found."
-      });
-    }
-
-    return res.status(200).json({
-      success: true,
-      data: record.payload
+      agentResponseContext: "SOW data stored. Redirecting to form..."
     });
 
   } catch (err) {
@@ -106,40 +79,52 @@ app.get("/sow-data/:token", async (req, res) => {
 
 // --------------------
 // GET /go/:token
-// Redirect with Query Params Instead of window.name
 // --------------------
 app.get("/go/:token", async (req, res) => {
   try {
     const { token } = req.params;
-
     const record = await SOW.findOne({ token });
-    console.log("Record found for token:", record ? "Yes" : "No");
+
     if (!record) {
-      return res.status(404).send("Link expired. Please regenerate.");
+      return res.status(404).send("Link expired or invalid. Please regenerate.");
     }
 
     const payload = record.payload;
-    console.log(payload);
-    // Convert payload JSON to URL query params
+
+    // --- CHANGE: Format Date for React Input ---
+    // React's <input type="date" /> requires YYYY-MM-DD
+    let formattedDate = "";
+    if (payload.orderDate) {
+      try {
+        const d = new Date(payload.orderDate);
+        if (!isNaN(d.getTime())) {
+          formattedDate = d.toISOString().split('T')[0];
+        }
+      } catch (e) {
+        console.error("Date formatting error:", e);
+      }
+    }
+
+    // Convert payload to URL query params
     const queryParams = new URLSearchParams({
       poNumber: payload.poNumber || "",
-      orderDate: payload.orderDate || "",
+      orderDate: formattedDate, // Use sanitized date
       invoiceAmount: payload.invoiceAmount || "",
-      currency: payload.currency || "",
+      currency: payload.currency || "USD",
       clientManager: payload.clientManager || "",
       clientManagerEmail: payload.clientManagerEmail || "",
       customerAccountNumber: payload.customerAccountNumber || "",
+      // Line item fields (first row)
       lineItemNumber: payload.lineItemNumber || "",
       lineItemDescription: payload.lineItemDescription || "",
-      price: payload.price || "",
-      quantity: payload.quantity || "",
-      amount: payload.amount || "",
-      billing: payload.billing || "",
+      price: payload.price || "55",
+      quantity: payload.quantity || "0",
+      amount: payload.amount || "0",
+      billing: payload.billing || "PER_HOUR",
       sow_token: token
     }).toString();
 
-    const redirectUrl =
-      `https://vithiit-careers-dev.mercuryx.cloud/dashboard/page/create-csod-sow?${queryParams}`;
+    const redirectUrl = `https://vithiit-careers-dev.mercuryx.cloud/dashboard/page/create-csod-sow?${queryParams}`;
 
     return res.redirect(redirectUrl);
 
@@ -149,16 +134,10 @@ app.get("/go/:token", async (req, res) => {
   }
 });
 
-// --------------------
-// Health Check Route
-// --------------------
 app.get("/", (req, res) => {
   res.send("🚀 SOW Bridge Server Running");
 });
 
-// --------------------
-// Start Server
-// --------------------
 app.listen(port, () => {
   console.log(`🚀 Server running on port ${port}`);
 });
