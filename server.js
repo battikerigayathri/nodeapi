@@ -113,13 +113,13 @@ app.get("/go/:token", async (req, res) => {
     const { token } = req.params;
 
     const record = await SOW.findOne({ token });
-
+    console.log("Record found for token:", record ? "Yes" : "No");
     if (!record) {
       return res.status(404).send("Link expired. Please regenerate.");
     }
 
     const payload = record.payload;
-
+    console.log(payload);
     // Convert payload JSON to URL query params
     const queryParams = new URLSearchParams({
       poNumber: payload.poNumber || "",
