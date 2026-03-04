@@ -5,11 +5,11 @@ const dotenv = require("dotenv");
 const crypto = require("crypto");
 dotenv.config();
 const cors = require("cors");
-app.use(cors()); // Add this near your other app.use calls
 const app = express();
 const port = 8005;
 
 app.use(express.json());
+app.use(cors()); // Add this near your other app.use calls
 
 const sowStore = new Map();
 
